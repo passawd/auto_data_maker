@@ -1,0 +1,353 @@
+import json
+import requests
+
+def read_json_file(file_path):
+    """
+    读取JSON文件并返回数据。
+    :param file_path: JSON文件路径
+    :return: 解析后的JSON数据
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            data = json.load(file)
+            return data
+    except FileNotFoundError:
+        print(f"文件 {file_path} 未找到。")
+    except json.JSONDecodeError:
+        print(f"文件 {file_path} 不是有效的 JSON 文件。")
+    return None
+
+def process_data(data):
+    """
+    处理JSON数据，按指定格式处理每个对象。
+    :param data: 源JSON数据
+    :return: 处理后的对象数组
+    """
+    if 'data' in data and isinstance(data['data'], list):
+        result_array = data['data']
+        return result_array
+    else:
+        print("JSON 数据格式不正确。")
+        return []
+def getval(val, item):
+
+    return val+float(item['value'])
+def get_avg(val, cnt):
+    return val/cnt
+class network_conditions:
+    def __init__(self, name, suc, time_avg, sub_name, tp95, tp99):
+        self.name = name
+        self.suc = suc
+        self.time_avg = time_avg
+        self.sub_name = sub_name
+        self.tp95 = tp95
+        self.tp99 = tp99
+
+    def __str__(self):
+        return (f"NetworkConditions(name={self.name}, suc={self.suc}, "
+                f"time_avg={self.time_avg}, sub_name={self.sub_name}, "
+                f"tp95={self.tp95}, tp99={self.tp99})")
+def arr_init(cnt):
+    arr = []
+    for i in range(cnt):
+        tmp = network_conditions("", 0.0, 0.0, "", 0.0, 0.0)
+        arr.append(tmp)
+    return arr
+def work(wbr_data, iOS_tp_data, android_tp_data, iOS_foundation_tp_data, android_foundation_tp_data):
+    cnt = 0
+    len = 10
+    result = arr_init(len)
+    # 定义下标 0 - 4 为 Android
+    # 定义下标 5 - 9 为 iOS
+    dic = {
+        "网络-图片端到端接口成功率": 0,
+        "网络-API端到端接口成功率": 1,
+        "网络-文件端到端接口成功率": 2,
+        "网络-配置端到端接口成功率": 3,
+
+        "网络-图片端到端接口平均耗时": 0,
+        "网络-API端到端接口平均耗时": 1,
+        "网络-文件端到端接口平均耗时": 2,
+        "网络-配置端到端接口平均耗时": 3,
+
+        "api": 1,
+        "img": 0,
+        "file": 2,
+        "conf": 3
+    }
+
+    type = {
+        "网络-图片端到端接口成功率": 0,
+        "网络-API端到端接口成功率": 0,
+        "网络-文件端到端接口成功率": 0,
+        "网络-配置端到端接口成功率": 0,
+
+        "网络-图片端到端接口平均耗时": 1,
+        "网络-API端到端接口平均耗时": 1,
+        "网络-文件端到端接口平均耗时": 1,
+        "网络-配置端到端接口平均耗时": 1,
+    }
+    get_name = {
+        "网络-图片端到端接口成功率": "图片",
+        "网络-API端到端接口成功率": "API",
+        "网络-文件端到端接口成功率": "文件",
+        "网络-配置端到端接口成功率": "配置",
+        "网络-图片端到端接口平均耗时": "图片",
+        "网络-API端到端接口平均耗时": "API",
+        "网络-文件端到端接口平均耗时": "文件",
+        "网络-配置端到端接口平均耗时": "配置"
+
+    }
+    for item in wbr_data:
+        m_name = item['name']
+        if m_name in dic:
+            cnt = cnt + 1
+            m_id = dic[m_name]
+            if item['subName'] == "iOS":
+                m_id = m_id+5
+            tp = type[m_name]
+            if tp == 0:
+                result[m_id].suc = getval(result[m_id].suc, item)
+            else:
+                result[m_id].time_avg = getval(result[m_id].time_avg, item)
+            result[m_id].name = get_name[m_name]
+            result[m_id].sub_name = item['subName']
+
+    cnt = cnt / 16
+    for item in result:
+        item.suc = get_avg(item.suc,cnt)
+        item.time_avg = get_avg(item.time_avg,cnt)
+
+    result[9].name = "四大场景基本盘"
+    result[9].sub_name = "ios"
+    result[4].name = "四大场景基本盘"
+    result[4].sub_name = "android"
+
+    #ios tp
+    for item in iOS_tp_data:
+        c_t_c = item['valueMap']['content_type_category']
+        m_id = dic[c_t_c] + 5
+        percent = item['percent']
+        result[m_id].tp95 = float(item['valueMap']['TP95'])
+        result[m_id].tp99 = float(item['valueMap']['TP99'])
+        result[9].suc = result[9].suc + result[m_id].suc * percent
+        result[9].time_avg = result[9].time_avg + result[m_id].time_avg * percent
+
+    #android tp
+    for item in android_tp_data:
+        c_t_c = item['valueMap']['content_type_category']
+        m_id = dic[c_t_c]
+        percent = item['percent']
+        result[m_id].tp95 = float(item['valueMap']['TP95'])
+        result[m_id].tp99 = float(item['valueMap']['TP99'])
+        result[4].suc = result[4].suc + result[m_id].suc * percent
+        result[4].time_avg = result[4].time_avg + result[m_id].time_avg * percent
+
+    #ios foundation
+    for item in iOS_foundation_tp_data['tp95']:
+        result[9].tp95 = getval(result[9].tp95, item)
+    for item in iOS_foundation_tp_data['tp99']:
+        result[9].tp99 = getval(result[9].tp99, item)
+
+    result[9].tp95 = get_avg(result[9].tp95, cnt)
+    result[9].tp99 = get_avg(result[9].tp99, cnt)
+
+    #android foundation
+    for item in android_foundation_tp_data['tp95']:
+        result[4].tp95 = getval(result[9].tp95, item)
+    for item in android_foundation_tp_data['tp99']:
+        result[4].tp99 = getval(result[9].tp99, item)
+
+    result[4].tp95 = get_avg(result[4].tp95, cnt)
+    result[4].tp99 = get_avg(result[4].tp99, cnt)
+
+    for item in result:
+        print(item)
+
+def get_wbr_data(start, end, access_token):
+    url = f"https://perf.sankuai.com/api/prism/mtbr/getMetricsDatas?start={start}&end={end}"
+
+    headers = {
+        'Accept': 'application/json, text/plain, */*',
+        'access-token': access_token
+    }
+
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        return response.json()['data']
+    else:
+        response.raise_for_status()
+
+
+def get_top3_version(access_token, project_name, start_time, end_time):
+    url = "https://perf.sankuai.com/api/prism/common/decorator/tagValues"
+
+    headers = {
+        'Content-Type': 'application/json;charset=UTF-8',
+        'access-token': access_token
+    }
+
+    body = {
+        "projectName": project_name,
+        "agg": "DAY",
+        "startTime": start_time,
+        "endTime": end_time,
+        "tag": "appVersion",
+        "filters": {},
+        "metricsName": "net_elapsed_time"
+    }
+
+    response = requests.post(url, headers=headers, data=json.dumps(body))
+
+    result = []
+
+    if response.status_code == 200:
+        result = response.json()
+    else:
+        response.raise_for_status()
+
+    data = []
+    if result:
+        for item in result['data']:
+            #print(item)
+            if len(data) < 3:
+                data.append(item['name'])
+
+    return data
+
+
+def get_all_tp(access_token, project_name, start_time, end_time, top3_app_versions):
+    url = "https://perf.sankuai.com/api/prism/common/decorator/dimensionAnalyse"
+
+    headers = {
+        'Content-Type': 'application/json;charset=UTF-8',
+        'access-token': access_token
+    }
+
+    body = {
+        "projectName": project_name,
+        "filters": {
+            "network_type": [
+                "WIFI网络",
+                "5G网络",
+                "4G网络",
+                "2G网络",
+                "3G网络",
+                "wap",
+                "other",
+                "unknown",
+                "未知网络状态"
+            ],
+            "appVersion": top3_app_versions,
+            "content_type_category": [
+                "api",
+                "img",
+                "file",
+                "conf"
+            ]
+        },
+        "metricsName": "net_elapsed_time",
+        "metricsType": "atom",
+        "agg": "DAY",
+        "startTime": start_time,
+        "endTime": end_time,
+        "tagNames": [
+            "content_type_category"
+        ],
+        "methodParamStrList": [
+            "totalCount",
+            "avg",
+            "tp95",
+            "tp99"
+        ],
+        "limit": 1000,
+        "notKeepDigit": True
+    }
+
+    response = requests.post(url, headers=headers, data=json.dumps(body))
+
+    if response.status_code == 200:
+        return response.json()['data']
+    else:
+        response.raise_for_status()
+
+def get_foundation_tp(access_token, project_name, start_time, end_time, top3_app_versions):
+    url = "https://perf.sankuai.com/api/prism/common/decorator/timeData"
+
+    headers = {
+        'Content-Type': 'application/json;charset=UTF-8',
+        'access-token': access_token
+    }
+
+    body = {
+        "projectName": project_name,
+        "filters": {
+            "network_type": [
+                "WIFI网络",
+                "5G网络",
+                "4G网络",
+                "2G网络",
+                "3G网络",
+                "wap",
+                "other",
+                "unknown",
+                "未知网络状态"
+            ],
+            "appVersion": top3_app_versions,
+            "content_type_category": [
+                "api",
+                "img",
+                "file",
+                "conf"
+            ]
+        },
+        "metricsName": "net_elapsed_time",
+        "metricsType": "atom",
+        "methods": [
+            # "tp90",  # 已注释掉
+            "tp95",
+            "tp99"
+        ],
+        "agg": "DAY",
+        "startTime": start_time,
+        "endTime": end_time
+    }
+
+    response = requests.post(url, headers=headers, data=json.dumps(body))
+
+    if response.status_code == 200:
+        return response.json()['data']
+    else:
+        response.raise_for_status()
+def main():
+
+    start = "20240517"
+    end = "20240523"
+    start_date = "2024-05-17"
+    end_date = "2024-05-23"
+
+    #wbr
+    wbr_data = get_wbr_data(start, end, access_token)
+
+    #top3 version
+    top3_version_Android = get_top3_version(access_token,projectNameAndroid, start_date, end_date)
+    top3_version_iOS = get_top3_version(access_token,projectNameiOS, start_date, end_date)
+
+    #ios tp
+    iOS_tp_data = get_all_tp(access_token, projectNameiOS, start_date, end_date, top3_version_iOS)
+
+    #android tp
+    android_tp_data = get_all_tp(access_token,projectNameAndroid, start_date, end_date, top3_version_Android)
+
+    #ios 基本盘 tp
+    #取数据使用  iOS_foundation_tp_data['tp99'] iOS_foundation_tp_data['tp95']
+    iOS_foundation_tp_data = get_foundation_tp(access_token, projectNameiOS, start_date, end_date, top3_version_iOS)
+
+    #android 基本盘 tp
+    android_foundation_tp_data = get_foundation_tp(access_token, projectNameAndroid, start_date, end_date, top3_version_Android)
+
+    work(wbr_data, iOS_tp_data, android_tp_data, iOS_foundation_tp_data, android_foundation_tp_data)
+
+if __name__ == "__main__":
+    main()
